@@ -2,6 +2,13 @@
 #include <cstdlib>
 #include <utility>
 #include <exception>
+#include <map>
+#include <utility>
+#include <iostream>
+
+namespace  {
+    constexpr size_t MIN_RESERVE_MEMORY = 5;
+}
 
 template <typename T, size_t number = 0>
 class UserAllocator{
@@ -26,40 +33,71 @@ public:
 
     }
 
-    T* allocate(std::size_t n)
-    {        
+    value_type* allocate(std::size_t n)
+    {
+        size_t quantity = 0;
         if(number)
-            m_chunk_capacity = number;
+            quantity  = number;
         else
-            m_chunk_capacity = n;
+            quantity  = n;
 
-        free_chunks = m_chunk_capacity;
-        auto p = malloc(m_chunk_capacity*sizeof (value_type));
+        auto p = malloc(quantity *sizeof (value_type));
         if(!p)
             throw std::bad_alloc();
+
+        std::cout << "allocate: " << p << std::endl;
+
+        size_t usedBytes = quantity *sizeof (value_type);
+        m_chunkStore.emplace(p, ControllerBlock(usedBytes, usedBytes));
         return reinterpret_cast<value_type*>(p);
     }
 
-    void deallocate(T* p, std::size_t n)
+    void deallocate(value_type* p, std::size_t n)
     {
+        auto result = m_chunkStore.find(p);
+        if(result == m_chunkStore.end())
+            return;
+
+        m_chunkStore.erase(result);
         free(p);
     }
 
     template <typename U, typename... Args>
     void construct(U* p, Args&&... args)
     {
-        new (p) U(std::forward(args)...);
-        free_chunks++;
+        std::cout << "construct: " << p << std::endl;
+        auto result = m_chunkStore.find(static_cast<void*>(p));
+        if(result == m_chunkStore.end())
+            return;
+
+        if(result->second.m_freeBytes < sizeof(U))
+            p = static_cast<U*>(static_cast<void*>(allocate(number? number : MIN_RESERVE_MEMORY)));
+
+        new (p) U(std::forward<Args>(args)...);
+        m_chunkStore.at(p).m_freeBytes-= sizeof (U);
     }
 
-    void destroy(T* p)
+    void destroy(value_type* p)
     {
+        auto result = m_chunkStore.find(p);
+        if(result == m_chunkStore.end())
+            return;
+        result->second.m_freeBytes+= sizeof(value_type);
         p->~value_type();
-        free_chunks--;
     }
 private:
-    size_t m_chunk_capacity = 0;
-    size_t free_chunks = 0;
 
+    struct ControllerBlock {
+        ControllerBlock() = default;
+        ControllerBlock(size_t bytesCapacity, size_t freeBytes):
+            m_bytesCapacity(bytesCapacity),
+            m_freeBytes(freeBytes)
+        {}
+
+        size_t m_bytesCapacity = 0;
+        size_t m_freeBytes = 0;
+    };
+
+    std::map<void*, ControllerBlock> m_chunkStore;
 };
 
