@@ -7,6 +7,5 @@ deploy:
   provider: script
   skip_cleanup: true
   script:
-  - curl -T allocator-0.0.$TRAVIS_BUILD_NUMBER-Linux.deb -usenyacherenkov:$BINTRAY_API_KEY "https://api.bintray.com/content/senyacherenkov/lesson_3/allocator/$TRAVIS_BUILD_NUMBER/allocator-0.0.$TRAVIS_BUILD_NUMBER-Linux.deb;deb_distribution=trusty;deb_component=main;deb_architecture=amd64;publish=1"
-
+  - curl -T allocator-0.0.$TRAVIS_BUILD_NUMBER-Linux.deb -usenyacherenkov:$BINTRAY_API_KEY "https://api.bintray.com/content/senyacherenkov/lesson_8/allocator/$TRAVIS_BUILD_NUMBER/allocator-0.0.$TRAVIS_BUILD_NUMBER-Linux.deb;deb_distribution=trusty;deb_component=main;deb_architecture=amd64;publish=1"
 
