@@ -5,12 +5,15 @@
 #include <map>
 #include <utility>
 #include <iostream>
+#include <cstring>
+#include <stdint.h>
 
 namespace  {
     constexpr size_t MIN_RESERVE_MEMORY = 5;
+    constexpr size_t MEMORY_MULTIPLIER = 2;
 }
 
-template <typename T, size_t number = 0>
+template <typename T, std::size_t number>
 class UserAllocator{
 public:
     using value_type = T;
@@ -22,82 +25,84 @@ public:
 
     template<typename U>
     struct rebind {
-        using other = UserAllocator<U>;
+        using other = UserAllocator<U, number>;
     };
 
     UserAllocator() = default;
     ~UserAllocator() = default;
 
     template<typename U>
-    UserAllocator(const UserAllocator<U>&) {
+    UserAllocator(const UserAllocator<U, number>&) {
 
     }
 
     value_type* allocate(std::size_t n)
-    {
+    {        
         size_t quantity = 0;
-        if(number)
+        if(!m_currentPointer && number)
             quantity  = number;
         else
             quantity  = n;
 
+        if((quantity *sizeof (value_type) < (number*sizeof (value_type) - m_offset)) && m_currentPointer)
+            return reinterpret_cast<value_type*>(reinterpret_cast<uint8_t*>(m_currentPointer) + m_offset);
+
+        if(m_currentPointer && m_offset) {
+            auto p = reallocate(MEMORY_MULTIPLIER*number);
+            return reinterpret_cast<value_type*>(reinterpret_cast<uint8_t*>(p) + m_offset);
+        }
+
         auto p = malloc(quantity *sizeof (value_type));
         if(!p)
-            throw std::bad_alloc();
+            throw std::bad_alloc();        
 
-        std::cout << "allocate: " << p << std::endl;
+        m_currentPointer = p;
 
-        size_t usedBytes = quantity *sizeof (value_type);
-        m_chunkStore.emplace(p, ControllerBlock(usedBytes, usedBytes));
         return reinterpret_cast<value_type*>(p);
     }
 
     void deallocate(value_type* p, std::size_t n)
     {
-        auto result = m_chunkStore.find(p);
-        if(result == m_chunkStore.end())
-            return;
-
-        m_chunkStore.erase(result);
-        free(p);
+        if(p == m_currentPointer)
+            m_currentPointer = nullptr;
+        free(p);        
     }
 
     template <typename U, typename... Args>
     void construct(U* p, Args&&... args)
-    {
-        std::cout << "construct: " << p << std::endl;
-        auto result = m_chunkStore.find(static_cast<void*>(p));
-        if(result == m_chunkStore.end())
-            return;
+    {     
+        std::size_t diff = reinterpret_cast<uint8_t*>(p) - reinterpret_cast<uint8_t*>(m_currentPointer) - m_offset;
+        if(diff)
+            m_offset += diff + sizeof(U);
+        else if(diff == 0)
+            m_offset += sizeof(U);
 
-        if(result->second.m_freeBytes < sizeof(U))
-            p = static_cast<U*>(static_cast<void*>(allocate(number? number : MIN_RESERVE_MEMORY)));
-
-        new (p) U(std::forward<Args>(args)...);
-        m_chunkStore.at(p).m_freeBytes-= sizeof (U);
+        new (p) U(std::forward<Args>(args)...);        
     }
 
     void destroy(value_type* p)
     {
-        auto result = m_chunkStore.find(p);
-        if(result == m_chunkStore.end())
-            return;
-        result->second.m_freeBytes+= sizeof(value_type);
         p->~value_type();
+        m_offset -= sizeof (value_type);
+    }
+
+    void reserve(std::size_t n) {
+        if(m_offset/sizeof (value_type) < n)
+            reallocate(n);
     }
 private:
+    void* reallocate(std::size_t n) {
+        auto p = malloc(n*sizeof (value_type));
+        if(!p)
+            throw std::bad_alloc();
+        memcpy(p, m_currentPointer, m_offset);
+        m_currentPointer = p;
+        return m_currentPointer;
+    }
 
-    struct ControllerBlock {
-        ControllerBlock() = default;
-        ControllerBlock(size_t bytesCapacity, size_t freeBytes):
-            m_bytesCapacity(bytesCapacity),
-            m_freeBytes(freeBytes)
-        {}
+private:
 
-        size_t m_bytesCapacity = 0;
-        size_t m_freeBytes = 0;
-    };
-
-    std::map<void*, ControllerBlock> m_chunkStore;
+    std::size_t m_offset = 0;
+    void* m_currentPointer = nullptr;
 };
 
