@@ -2,8 +2,7 @@
 #include "user_container.h"
 #include <map>
 #include <iostream>
-#include <vector>
-#include <array>
+
 namespace {
     constexpr std::size_t NUMBER_ALLOCATED_ELEMENTS = 10;
 
