@@ -2,18 +2,17 @@
 #include <cstdlib>
 #include <utility>
 #include <exception>
-#include <map>
-#include <utility>
-#include <iostream>
+#include <set>
+#include <cmath>
+
 #include <cstring>
 #include <stdint.h>
 
-namespace  {
-    constexpr size_t MIN_RESERVE_MEMORY = 5;
-    constexpr size_t MEMORY_MULTIPLIER = 2;
+namespace {
+    constexpr int MEM_MULTIPLIER = 2;
 }
 
-template <typename T, std::size_t number>
+template <typename T, std::size_t chunkCapacity>
 class UserAllocator{
 public:
     using value_type = T;
@@ -25,44 +24,44 @@ public:
 
     template<typename U>
     struct rebind {
-        using other = UserAllocator<U, number>;
+        using other = UserAllocator<U, chunkCapacity>;
     };
 
     UserAllocator() = default;
     ~UserAllocator() = default;
 
     template<typename U>
-    UserAllocator(const UserAllocator<U, number>&) {
+    UserAllocator(const UserAllocator<U, chunkCapacity>&) {
 
     }
 
     value_type* allocate(std::size_t n)
     {        
         size_t quantity = 0;
-        if(!m_currentPointer && number)
-            quantity  = number;
+        if(!m_currentPointer && chunkCapacity)
+            quantity  = chunkCapacity;
         else
             quantity  = n;
 
-        if((quantity *sizeof (value_type) < (number*sizeof (value_type) - m_offset)) && m_currentPointer)
+        if((quantity *sizeof (value_type) <= (chunkCapacity*sizeof (value_type) - m_offset)) && m_currentPointer)
             return reinterpret_cast<value_type*>(reinterpret_cast<uint8_t*>(m_currentPointer) + m_offset);
-
-        if(m_currentPointer && m_offset) {
-            auto p = reallocate(MEMORY_MULTIPLIER*number);
-            return reinterpret_cast<value_type*>(reinterpret_cast<uint8_t*>(p) + m_offset);
-        }
 
         auto p = malloc(quantity *sizeof (value_type));
         if(!p)
             throw std::bad_alloc();        
 
+        m_offset = 0;
         m_currentPointer = p;
 
+        m_controlBlock.insert(m_currentPointer);
         return reinterpret_cast<value_type*>(p);
     }
 
     void deallocate(value_type* p, std::size_t n)
     {
+        auto result = m_controlBlock.find(p);
+        if(result == m_controlBlock.end())
+            return;
         if(p == m_currentPointer)
             m_currentPointer = nullptr;
         free(p);        
@@ -87,21 +86,20 @@ public:
     }
 
     void reserve(std::size_t n) {
-        if(m_offset/sizeof (value_type) < n)
-            reallocate(n);
-    }
-private:
-    void* reallocate(std::size_t n) {
-        auto p = malloc(n*sizeof (value_type));
-        if(!p)
-            throw std::bad_alloc();
-        memcpy(p, m_currentPointer, m_offset);
-        m_currentPointer = p;
-        return m_currentPointer;
+        if((chunkCapacity - m_offset/sizeof (value_type)) < n) {
+            auto p = malloc(n <= chunkCapacity ? MEM_MULTIPLIER*chunkCapacity*sizeof (value_type):
+                        std::ceil(static_cast<double>(n)/static_cast<double>(chunkCapacity))
+                        *chunkCapacity*sizeof (value_type));
+            if(!p)
+                throw std::bad_alloc();
+            memcpy(p, m_currentPointer, m_offset);
+            free(m_currentPointer);
+            m_currentPointer = p;
+        }
     }
 
-private:
-
+private:    
+    std::set<void*> m_controlBlock;
     std::size_t m_offset = 0;
     void* m_currentPointer = nullptr;
 };

@@ -1,30 +1,28 @@
 #pragma once
 #include <vector>
 
-namespace {
-    constexpr int MIN_CAPACITY = 10;
-    constexpr int MEM_MULTIPLIER = 2;
-}
-
-template <typename T, typename Alloc = std::allocator<T>>
+template <typename T, typename Alloc = std::allocator<T>, std::size_t chunkSize = 1>
 class UserContainer {
 public:
     Alloc local_allocator;
-    UserContainer() {
-        auto pointer = local_allocator.allocate(MIN_CAPACITY);
-        m_data = reinterpret_cast<T*>(pointer);
-    }
+    UserContainer() {}
 
+    ~UserContainer(){
+        for(std::size_t i = 0; i < m_storage.size(); i+=chunkSize) {
+            local_allocator.destroy(m_storage.at(i));
+            local_allocator.deallocate(m_storage.at(i), 1);
+        }
+    }
     struct iterator_ {
-        T* m_data = nullptr;
+        std::vector<T*>& m_data;
         std::size_t m_pointer = 0;
 
-        iterator_(T* data):
+        iterator_(std::vector<T*>& data):
             m_data(data),
             m_pointer(0)
         {}
 
-        iterator_(T* data, std::size_t pointer):
+        iterator_(std::vector<T*>& data, std::size_t pointer):
             m_data(data),
             m_pointer(pointer)
         {}
@@ -42,22 +40,20 @@ public:
             ++(*this);
             return result;
         }
-        T& operator*() { return *(static_cast<T*>(m_data + m_pointer)); }
+        T& operator*() { return *(m_data.at(m_pointer)); }
     };
 
     template <typename... Args>
     void emplace_back(Args&&... args){
-        if(m_size >= MIN_CAPACITY)
-            m_data = local_allocator.allocate(m_size * MEM_MULTIPLIER);
+        auto pointer = local_allocator.allocate(1);
+        m_storage.push_back(reinterpret_cast<T*>(pointer));
 
-        local_allocator.construct(reinterpret_cast<T*>(m_data + m_size), std::forward<Args>(args)...);
-        m_size++;
+        local_allocator.construct(reinterpret_cast<T*>(m_storage.back()), std::forward<Args>(args)...);
     }
 
-    iterator_ begin() { return iterator_(m_data); }
-    iterator_ end() {return iterator_(m_data, m_size); }
+    iterator_ begin() { return iterator_(m_storage); }
+    iterator_ end() {return iterator_(m_storage, m_storage.size()); }
 
 private:
-    T* m_data = nullptr;
-    std::size_t m_size = 0;
+    std::vector<T*> m_storage;
 };
