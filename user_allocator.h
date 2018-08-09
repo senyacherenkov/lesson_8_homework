@@ -2,9 +2,9 @@
 #include <cstdlib>
 #include <utility>
 #include <exception>
-#include <set>
+#include <vector>
 #include <cmath>
-
+#include <algorithm>
 #include <cstring>
 #include <stdint.h>
 
@@ -38,51 +38,52 @@ public:
     value_type* allocate(std::size_t n)
     {        
         size_t quantity = 0;
+        size_t requestedBytes = 0;
         if(!m_currentPointer && chunkCapacity)
             quantity  = chunkCapacity;
         else
             quantity  = n;
 
-        if((quantity *sizeof (value_type) <= (chunkCapacity*sizeof (value_type) - m_offset)) && m_currentPointer)
-            return reinterpret_cast<value_type*>(reinterpret_cast<uint8_t*>(m_currentPointer) + m_offset);
+        requestedBytes = quantity * sizeof (value_type);
 
-        auto p = malloc(quantity *sizeof (value_type));
+        if((requestedBytes <= (chunkCapacity*sizeof (value_type) - m_offset)) && m_currentPointer)
+        {
+            auto pValidMemory = reinterpret_cast<value_type*>(reinterpret_cast<uint8_t*>(m_currentPointer) + m_offset);
+            m_offset += requestedBytes;
+            return pValidMemory;
+        }
+
+        auto p = malloc(requestedBytes);
         if(!p)
             throw std::bad_alloc();        
 
-        m_offset = 0;
+        m_offset = sizeof (value_type);
         m_currentPointer = p;
 
-        m_controlBlock.insert(m_currentPointer);
+        m_storage.push_back(m_currentPointer);
+
         return reinterpret_cast<value_type*>(p);
     }
 
     void deallocate(value_type* p, std::size_t n)
     {
-        auto result = m_controlBlock.find(p);
-        if(result == m_controlBlock.end())
+        if(std::find(m_storage.begin(), m_storage.end(), p) == m_storage.end())
             return;
         if(p == m_currentPointer)
             m_currentPointer = nullptr;
-        free(p);        
+        free(p);
+        m_offset -= sizeof (value_type) * n;
     }
 
     template <typename U, typename... Args>
     void construct(U* p, Args&&... args)
-    {     
-        std::size_t diff = reinterpret_cast<uint8_t*>(p) - reinterpret_cast<uint8_t*>(m_currentPointer) - m_offset;
-        if(diff)
-            m_offset += diff + sizeof(U);
-        else if(diff == 0)
-            m_offset += sizeof(U);
-
+    {
         new (p) U(std::forward<Args>(args)...);        
     }
 
     void destroy(value_type* p)
     {
-        p->~value_type();
-        m_offset -= sizeof (value_type);
+        p->~value_type();        
     }
 
     void reserve(std::size_t n) {
@@ -98,8 +99,8 @@ public:
         }
     }
 
-private:    
-    std::set<void*> m_controlBlock;
+private:
+    std::vector<void*> m_storage;
     std::size_t m_offset = 0;
     void* m_currentPointer = nullptr;
 };

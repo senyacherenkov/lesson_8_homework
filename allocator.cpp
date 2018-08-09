@@ -30,7 +30,7 @@ int main()
     for(int i = 0; i < 10; i++)
         myContainerStdAlloc.emplace_back(i);
 
-    UserContainer<int, UserAllocator<int, CHUNK_SIZE>, CHUNK_SIZE> myContainerUserAlloc;
+    UserContainer<int, UserAllocator<int, CHUNK_SIZE>> myContainerUserAlloc;
     for(int i = 0; i < 10; i++)
         myContainerUserAlloc.emplace_back(i);
 

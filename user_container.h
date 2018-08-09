@@ -1,16 +1,16 @@
 #pragma once
 #include <vector>
 
-template <typename T, typename Alloc = std::allocator<T>, std::size_t chunkSize = 1>
+template <typename T, typename Alloc = std::allocator<T>>
 class UserContainer {
 public:
     Alloc local_allocator;
     UserContainer() {}
 
     ~UserContainer(){
-        for(std::size_t i = 0; i < m_storage.size(); i+=chunkSize) {
-            local_allocator.destroy(m_storage.at(i));
-            local_allocator.deallocate(m_storage.at(i), 1);
+        for(auto it = m_storage.rbegin(); it != m_storage.rend(); it++) {
+            local_allocator.destroy(*it);
+            local_allocator.deallocate(*it, 1);
         }
     }
     struct iterator_ {
