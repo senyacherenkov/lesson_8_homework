@@ -67,10 +67,12 @@ public:
 
     void deallocate(value_type* p, std::size_t n)
     {
-        if(std::find(m_storage.begin(), m_storage.end(), p) == m_storage.end())
+        auto it = std::find(m_storage.begin(), m_storage.end(), p);
+        if( it == m_storage.end())
             return;
         if(p == m_currentPointer)
             m_currentPointer = nullptr;
+        m_storage.erase(it);
         free(p);
         m_offset -= sizeof (value_type) * n;
     }
